@@ -219,9 +219,8 @@ def is_url(text):
     """
     # Pattern to match common URL formats
     url_pattern = re.compile(
-        r'(?:https?://|'  # http:// or https://
-        r'(?:^|\s)www\.)'  # www. at start or after whitespace
-        r'[\w\-\.]+\.\w+',  # domain.tld
+        r'(?:https?://[\w\-\.]+\.\w+|'  # http://domain.tld or https://domain.tld
+        r'(?:^|\s)www\.[\w\-]+\.\w+)',  # www.domain.tld at start or after whitespace
         re.IGNORECASE
     )
     return bool(url_pattern.search(text))
@@ -334,7 +333,6 @@ def _extract_formats_impl(url, start_time):
         'extract_flat': False,
         'socket_timeout': 30,
         'http_chunk_size': 10485760,  # 10MB chunks
-        'user_agent': USER_AGENT,
         # Instagram specific options
         'http_headers': {
             'User-Agent': USER_AGENT,
@@ -648,7 +646,6 @@ def _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, 
         'http_chunk_size': 10485760,  # 10MB chunks to prevent 413 errors
         'fragment_retries': 5,
         'skip_unavailable_fragments': True,
-        'user_agent': USER_AGENT,
         'http_headers': {
             'User-Agent': USER_AGENT,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
