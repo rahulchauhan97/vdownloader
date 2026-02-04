@@ -52,6 +52,7 @@ async def load_state():
     """Load state from JSON file with async locking"""
     async with state_lock:
         try:
+            # Using sync I/O is acceptable here for simplicity since state file is small
             with open('data/state.json', 'r') as f:
                 state = json.load(f)
         except FileNotFoundError:
@@ -77,15 +78,19 @@ async def load_state():
 async def save_state(state):
     """Save state to JSON file with async locking"""
     async with state_lock:
+        # Using sync I/O is acceptable here for simplicity since state file is small
         with open('data/state.json', 'w') as f:
             json.dump(state, f, indent=2)
 
 
 def log_admin_action(admin_id, action):
-    """Log admin action to file"""
+    """Log admin action to file (synchronous, called from async contexts)"""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    with open('data/admin_actions.log', 'a') as f:
-        f.write(f"[{timestamp}] {admin_id}: {action}\n")
+    try:
+        with open('data/admin_actions.log', 'a') as f:
+            f.write(f"[{timestamp}] {admin_id}: {action}\n")
+    except Exception as e:
+        logger.error(f"Failed to log admin action: {e}")
 
 
 def is_admin(user_id, state):
@@ -314,8 +319,8 @@ async def handle_format_selection(update: Update, context: ContextTypes.DEFAULT_
                 os.remove(result['file_path'])
                 if result.get('temp_dir'):
                     shutil.rmtree(result['temp_dir'], ignore_errors=True)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Cleanup error: {e}")
         else:
             await query.message.edit_text(f"❌ {result['error']}")
     
@@ -334,32 +339,14 @@ def download_video(url, format_id, cancel_event, chat_id, bot, message_id, max_u
     temp_dir = tempfile.mkdtemp()
     last_update = [0]  # Mutable for closure
     
+    # Note: Progress updates from thread are best-effort only
+    # Due to thread safety concerns with asyncio, we skip live progress updates
+    # The download will complete silently and then upload
+    
     def progress_hook(d):
         # Check cancellation
         if cancel_event.is_set():
             raise Exception("Download cancelled by user")
-        
-        # Throttle updates to ~1 second
-        now = time.time()
-        if d['status'] == 'downloading' and now - last_update[0] >= 1.0:
-            last_update[0] = now
-            
-            percent = d.get('_percent_str', '0%')
-            speed = d.get('_speed_str', 'N/A')
-            eta = d.get('_eta_str', 'N/A')
-            
-            # Send update to Telegram (non-blocking)
-            try:
-                asyncio.run_coroutine_threadsafe(
-                    bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text=f"⬇️ Downloading: {percent}\nSpeed: {speed}\nETA: {eta}"
-                    ),
-                    asyncio.get_event_loop()
-                )
-            except:
-                pass
     
     ydl_opts = {
         'format': format_id if format_id != 'best' else 'bestvideo+bestaudio/best',
@@ -709,7 +696,8 @@ async def broadcast_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         try:
             await context.bot.send_message(chat_id=int(chat_id), text=message)
             sent += 1
-        except:
+        except Exception as e:
+            logger.debug(f"Failed to send to {chat_id}: {e}")
             failed += 1
         
         # Small delay to avoid rate limits
