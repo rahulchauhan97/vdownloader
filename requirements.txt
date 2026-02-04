@@ -1,2 +1,5 @@
 python-telegram-bot==20.7
 yt-dlp>=2023.11.16
+ddtrace>=2.5.0
+datadog>=0.47.0
+python-json-logger>=2.0.7

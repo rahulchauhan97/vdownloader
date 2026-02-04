@@ -19,5 +19,10 @@ COPY data/ ./data/
 # Create directories for downloads
 RUN mkdir -p /app/downloads /app/temp
 
+# Set Datadog environment variables (can be overridden)
+ENV DD_SERVICE=vdownloader
+ENV DD_ENV=production
+ENV DD_VERSION=1.0.0
+
 # Run the bot
-CMD ["python", "main.py"]
+CMD ["ddtrace-run", "python", "main.py"]

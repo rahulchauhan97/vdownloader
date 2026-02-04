@@ -27,12 +27,63 @@ from telegram.ext import (
     ContextTypes,
 )
 
+# Datadog imports
+try:
+    from ddtrace import tracer, patch_all
+    from datadog import initialize as dd_initialize, statsd
+    from pythonjsonlogger import jsonlogger
+    DATADOG_ENABLED = True
+except ImportError:
+    DATADOG_ENABLED = False
+    tracer = None
+    statsd = None
+
 # Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
 logger = logging.getLogger(__name__)
+
+# Initialize Datadog if enabled
+DD_SERVICE = os.getenv('DD_SERVICE', 'vdownloader')
+DD_ENV = os.getenv('DD_ENV', 'production')
+DD_VERSION = os.getenv('DD_VERSION', '1.0.0')
+DD_AGENT_HOST = os.getenv('DD_AGENT_HOST', 'localhost')
+DD_AGENT_PORT = int(os.getenv('DD_AGENT_PORT', '8125'))
+
+if DATADOG_ENABLED:
+    # Initialize Datadog APM
+    patch_all()
+    
+    # Initialize Datadog StatsD client
+    dd_options = {
+        'statsd_host': DD_AGENT_HOST,
+        'statsd_port': DD_AGENT_PORT,
+    }
+    dd_initialize(**dd_options)
+    
+    # Configure JSON logging for Datadog
+    logHandler = logging.StreamHandler()
+    formatter = jsonlogger.JsonFormatter(
+        '%(asctime)s %(name)s %(levelname)s %(message)s',
+        timestamp=True
+    )
+    logHandler.setFormatter(formatter)
+    
+    # Set up root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(logHandler)
+    
+    logger.info("Datadog APM and logging initialized", extra={
+        'dd.service': DD_SERVICE,
+        'dd.env': DD_ENV,
+        'dd.version': DD_VERSION
+    })
+else:
+    # Fallback to basic logging if Datadog is not available
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+    logger.warning("Datadog not available, using basic logging")
 
 # Configuration from environment
 BOT_TOKEN = os.getenv('BOT_TOKEN')
@@ -92,8 +143,49 @@ def log_admin_action(admin_id, action):
     try:
         with open('data/admin_actions.log', 'a') as f:
             f.write(f"[{timestamp}] {admin_id}: {action}\n")
+        
+        # Send metric to Datadog
+        if DATADOG_ENABLED and statsd:
+            statsd.increment('vdownloader.admin.action', tags=[f'action:{action}'])
+            
+        logger.info("Admin action logged", extra={
+            'admin_id': admin_id,
+            'action': action
+        })
     except Exception as e:
-        logger.error(f"Failed to log admin action: {e}")
+        logger.error(f"Failed to log admin action: {e}", extra={
+            'admin_id': admin_id,
+            'action': action,
+            'error': str(e)
+        })
+
+
+def send_metric(metric_name, value=1, metric_type='increment', tags=None):
+    """Send metric to Datadog if enabled"""
+    if not DATADOG_ENABLED or not statsd:
+        return
+    
+    try:
+        if tags is None:
+            tags = []
+        
+        # Add default tags
+        tags.extend([
+            f'service:{DD_SERVICE}',
+            f'env:{DD_ENV}',
+            f'version:{DD_VERSION}'
+        ])
+        
+        if metric_type == 'increment':
+            statsd.increment(metric_name, value=value, tags=tags)
+        elif metric_type == 'gauge':
+            statsd.gauge(metric_name, value, tags=tags)
+        elif metric_type == 'histogram':
+            statsd.histogram(metric_name, value, tags=tags)
+        elif metric_type == 'timing':
+            statsd.timing(metric_name, value, tags=tags)
+    except Exception as e:
+        logger.warning(f"Failed to send metric {metric_name}: {e}")
 
 
 def is_admin(user_id, state):
@@ -111,17 +203,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     state = await load_state()
     
+    # Send metric
+    send_metric('vdownloader.command.start', tags=['command:start'])
+    
     if is_banned(user_id, state):
+        logger.warning("Banned user tried to access bot", extra={
+            'user_id': user_id,
+            'command': 'start'
+        })
         await update.message.reply_text("You are banned from using this bot.")
         return
     
     # Track user
-    if str(user_id) not in state['users']:
+    is_new_user = str(user_id) not in state['users']
+    if is_new_user:
         state['users'][str(user_id)] = {
             'first_seen': datetime.now().isoformat(),
             'username': update.effective_user.username or ''
         }
         await save_state(state)
+        
+        # Send metric for new user
+        send_metric('vdownloader.user.new', tags=['event:new_user'])
+        logger.info("New user registered", extra={
+            'user_id': user_id,
+            'username': update.effective_user.username
+        })
     
     welcome_text = (
         "🎥 Welcome to VDownloader Bot!\n\n"
@@ -153,6 +260,21 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def extract_formats(url):
     """Extract available formats from URL using yt-dlp"""
+    start_time = time.time()
+    
+    # Add span for tracing
+    if DATADOG_ENABLED and tracer:
+        with tracer.trace("extract_formats", service=DD_SERVICE) as span:
+            span.set_tag("url", url)
+            result = _extract_formats_impl(url, start_time)
+            span.set_tag("success", result is not None)
+            return result
+    else:
+        return _extract_formats_impl(url, start_time)
+
+
+def _extract_formats_impl(url, start_time):
+    """Implementation of format extraction"""
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -181,12 +303,32 @@ def extract_formats(url):
             # Sort by filesize
             video_formats.sort(key=lambda x: x['filesize'], reverse=True)
             
+            # Send metrics
+            duration = (time.time() - start_time) * 1000  # Convert to milliseconds
+            send_metric('vdownloader.extract_formats.duration', value=duration, metric_type='histogram')
+            send_metric('vdownloader.extract_formats.success', tags=['status:success'])
+            
+            logger.info("Formats extracted successfully", extra={
+                'url': url,
+                'format_count': len(video_formats),
+                'duration_ms': duration
+            })
+            
             return {
                 'title': info.get('title', 'video'),
                 'formats': video_formats[:10]  # Limit to 10 formats
             }
     except Exception as e:
-        logger.error(f"Error extracting formats: {e}")
+        duration = (time.time() - start_time) * 1000
+        send_metric('vdownloader.extract_formats.duration', value=duration, metric_type='histogram')
+        send_metric('vdownloader.extract_formats.error', tags=['status:error', f'error_type:{type(e).__name__}'])
+        
+        logger.error("Error extracting formats", extra={
+            'url': url,
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'duration_ms': duration
+        })
         return None
 
 
@@ -196,14 +338,28 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     state = await load_state()
     
+    # Send metric
+    send_metric('vdownloader.url.received', tags=['event:url_received'])
+    
     if is_banned(user_id, state):
+        logger.warning("Banned user tried to download", extra={
+            'user_id': user_id,
+            'event': 'url_received'
+        })
         await update.message.reply_text("You are banned from using this bot.")
         return
     
     url = update.message.text.strip()
     
+    logger.info("URL received for processing", extra={
+        'user_id': user_id,
+        'chat_id': chat_id,
+        'url': url
+    })
+    
     # Check if already downloading
     if chat_id in active_downloads:
+        send_metric('vdownloader.url.rejected', tags=['reason:already_downloading'])
         await update.message.reply_text("You already have an active download. Use /cancel to stop it first.")
         return
     
@@ -215,10 +371,22 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         info = await loop.run_in_executor(executor, extract_formats, url)
     except Exception as e:
+        send_metric('vdownloader.url.error', tags=['stage:extract', f'error_type:{type(e).__name__}'])
+        logger.error("Error during format extraction", extra={
+            'user_id': user_id,
+            'url': url,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
         await msg.edit_text(f"❌ Error: {str(e)}")
         return
     
     if not info or not info['formats']:
+        send_metric('vdownloader.url.error', tags=['stage:extract', 'reason:no_formats'])
+        logger.warning("No formats found for URL", extra={
+            'user_id': user_id,
+            'url': url
+        })
         await msg.edit_text("❌ No formats found or unsupported URL.")
         return
     
@@ -302,6 +470,7 @@ async def handle_format_selection(update: Update, context: ContextTypes.DEFAULT_
         
         if result['success']:
             # Upload file
+            upload_start = time.time()
             await query.message.edit_text("📤 Uploading...")
             
             with open(result['file_path'], 'rb') as f:
@@ -312,12 +481,31 @@ async def handle_format_selection(update: Update, context: ContextTypes.DEFAULT_
                     supports_streaming=True
                 )
             
+            upload_duration = (time.time() - upload_start) * 1000
+            
+            # Send metrics
+            send_metric('vdownloader.upload.duration', value=upload_duration, metric_type='histogram')
+            send_metric('vdownloader.upload.success', tags=['status:success'])
+            send_metric('vdownloader.video.complete', tags=['status:success'])
+            
             await query.message.edit_text("✅ Download complete!")
+            
+            logger.info("Video uploaded successfully", extra={
+                'user_id': user_id,
+                'chat_id': chat_id,
+                'filesize': result['filesize'],
+                'upload_duration_ms': upload_duration,
+                'title': result['title']
+            })
             
             # Update stats
             state['stats']['downloads'] += 1
             state['stats']['bytes'] += result['filesize']
             await save_state(state)
+            
+            # Update gauge metrics
+            send_metric('vdownloader.stats.total_downloads', value=state['stats']['downloads'], metric_type='gauge')
+            send_metric('vdownloader.stats.total_bytes', value=state['stats']['bytes'], metric_type='gauge')
             
             # Cleanup
             try:
@@ -341,8 +529,27 @@ async def handle_format_selection(update: Update, context: ContextTypes.DEFAULT_
 
 def download_video(url, format_id, cancel_event, chat_id, bot, message_id, max_upload_mb):
     """Download video using yt-dlp (runs in thread)"""
+    start_time = time.time()
     temp_dir = tempfile.mkdtemp()
     last_update = [0]  # Mutable for closure
+    
+    # Add tracing if Datadog is enabled
+    if DATADOG_ENABLED and tracer:
+        with tracer.trace("download_video", service=DD_SERVICE) as span:
+            span.set_tag("url", url)
+            span.set_tag("format_id", format_id)
+            span.set_tag("chat_id", chat_id)
+            result = _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, start_time)
+            span.set_tag("success", result.get('success', False))
+            if not result.get('success'):
+                span.set_tag("error", result.get('error', 'unknown'))
+            return result
+    else:
+        return _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, start_time)
+
+
+def _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, start_time):
+    """Implementation of video download"""
     
     # Note: Progress updates from thread are best-effort only
     # Due to thread safety concerns with asyncio, we skip live progress updates
@@ -380,11 +587,33 @@ def download_video(url, format_id, cancel_event, chat_id, bot, message_id, max_u
             filesize = os.path.getsize(filename)
             filesize_mb = filesize / (1024 * 1024)
             
+            # Send metrics
+            duration = (time.time() - start_time) * 1000
+            send_metric('vdownloader.download.duration', value=duration, metric_type='histogram', 
+                       tags=[f'format:{format_id}'])
+            send_metric('vdownloader.download.size', value=filesize, metric_type='histogram')
+            
             if filesize_mb > max_upload_mb:
+                send_metric('vdownloader.download.error', tags=['reason:file_too_large'])
+                logger.warning("Downloaded file too large", extra={
+                    'url': url,
+                    'filesize_mb': filesize_mb,
+                    'max_upload_mb': max_upload_mb,
+                    'duration_ms': duration
+                })
                 return {
                     'success': False,
                     'error': f'File too large ({filesize_mb:.1f}MB > {max_upload_mb}MB)'
                 }
+            
+            send_metric('vdownloader.download.success', tags=['status:success'])
+            logger.info("Video downloaded successfully", extra={
+                'url': url,
+                'format_id': format_id,
+                'filesize_mb': filesize_mb,
+                'duration_ms': duration,
+                'title': info.get('title', 'video')
+            })
             
             return {
                 'success': True,
@@ -395,6 +624,19 @@ def download_video(url, format_id, cancel_event, chat_id, bot, message_id, max_u
             }
     
     except Exception as e:
+        duration = (time.time() - start_time) * 1000
+        send_metric('vdownloader.download.duration', value=duration, metric_type='histogram',
+                   tags=[f'format:{format_id}', 'status:error'])
+        send_metric('vdownloader.download.error', tags=[f'error_type:{type(e).__name__}'])
+        
+        logger.error("Video download failed", extra={
+            'url': url,
+            'format_id': format_id,
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'duration_ms': duration
+        })
+        
         shutil.rmtree(temp_dir, ignore_errors=True)
         return {
             'success': False,
