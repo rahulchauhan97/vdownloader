@@ -117,8 +117,8 @@ GREETINGS = {
 # Compiled regex pattern for URL detection (compiled once at module load)
 # Matches URLs with http://, https://, or www. prefix, including paths and query parameters
 URL_PATTERN = re.compile(
-    r'(?:https?://[\w\-\.]+\.\w+(?:/[^\s]*)?|'  # http(s)://domain.tld/path?query
-    r'(?:^|\s)www\.[\w\-]+\.\w+(?:/[^\s]*)?)',  # www.domain.tld/path?query
+    r'(?:https?://[\w.\-]+\.\w+(?:/[^\s]*)?|'  # http(s)://domain.tld followed by optional non-whitespace
+    r'(?:^|\s)www\.[\w\-]+\.\w+(?:/[^\s]*)?)',  # www.domain.tld followed by optional non-whitespace
     re.IGNORECASE
 )
 
