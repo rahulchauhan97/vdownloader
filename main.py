@@ -12,6 +12,7 @@ import tempfile
 import shutil
 import time
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -203,6 +204,28 @@ def is_banned(user_id, state):
     return user_id in state['bans']
 
 
+def is_url(text):
+    """Check if text is a URL"""
+    # Pattern to match URLs with various protocols
+    url_pattern = re.compile(
+        r'https?://|'  # http:// or https://
+        r'www\.|'      # www.
+        r'\w+\.\w+/'   # domain.com/
+    )
+    return bool(url_pattern.search(text.lower()))
+
+
+def is_greeting(text):
+    """Check if text is a greeting"""
+    greetings = {
+        'hi', 'hello', 'hey', 'hola', 'howdy', 'greetings',
+        'good morning', 'good afternoon', 'good evening',
+        'sup', 'yo', 'hii', 'heya', 'hiya'
+    }
+    text_lower = text.lower().strip()
+    return text_lower in greetings
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     user_id = update.effective_user.id
@@ -286,6 +309,14 @@ def _extract_formats_impl(url, start_time):
         'extract_flat': False,
         'socket_timeout': 30,
         'http_chunk_size': 10485760,  # 10MB chunks
+        'user_agent': USER_AGENT,
+        # Instagram specific options
+        'http_headers': {
+            'User-Agent': USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        }
     }
     
     try:
@@ -343,9 +374,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     state = await load_state()
     
-    # Send metric
-    send_metric('vdownloader.url.received', tags=['event:url_received'])
-    
     if is_banned(user_id, state):
         logger.warning("Banned user tried to download", extra={
             'user_id': user_id,
@@ -354,7 +382,26 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You are banned from using this bot.")
         return
     
-    url = update.message.text.strip()
+    text = update.message.text.strip()
+    
+    # Check if message is a greeting
+    if is_greeting(text):
+        await update.message.reply_text(
+            "👋 Hello! Send me a video URL from YouTube, Instagram, TikTok, Twitter/X, or other supported sites to download."
+        )
+        return
+    
+    # Check if message is a URL
+    if not is_url(text):
+        await update.message.reply_text(
+            "Please send a valid video URL. Use /help for more information."
+        )
+        return
+    
+    url = text
+    
+    # Send metric
+    send_metric('vdownloader.url.received', tags=['event:url_received'])
     
     logger.info("URL received for processing", extra={
         'user_id': user_id,
@@ -576,8 +623,12 @@ def _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, 
         'http_chunk_size': 10485760,  # 10MB chunks to prevent 413 errors
         'fragment_retries': 5,
         'skip_unavailable_fragments': True,
+        'user_agent': USER_AGENT,
         'http_headers': {
             'User-Agent': USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
         },
     }
     
