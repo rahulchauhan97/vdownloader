@@ -99,10 +99,26 @@ MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', 1900))
 # User-Agent for better compatibility with video platforms
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
+# HTTP headers for yt-dlp (used for better compatibility with various platforms)
+YTDLP_HTTP_HEADERS = {
+    'User-Agent': USER_AGENT,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-us,en;q=0.5',
+    'Sec-Fetch-Mode': 'navigate',
+}
+
+# Common greetings for detection
+GREETINGS = {
+    'hi', 'hello', 'hey', 'hola', 'howdy', 'greetings',
+    'good morning', 'good afternoon', 'good evening',
+    'sup', 'yo', 'hii', 'heya', 'hiya'
+}
+
 # Compiled regex pattern for URL detection (compiled once at module load)
+# Matches URLs with http://, https://, or www. prefix, including paths and query parameters
 URL_PATTERN = re.compile(
-    r'(?:https?://[\w\-\.]+\.\w+|'  # http://domain.tld or https://domain.tld
-    r'(?:^|\s)www\.[\w\-]+\.\w+)',  # www.domain.tld at start or after whitespace
+    r'(?:https?://[\w\-\.]+\.\w+(?:/[^\s]*)?|'  # http(s)://domain.tld/path?query
+    r'(?:^|\s)www\.[\w\-]+\.\w+(?:/[^\s]*)?)',  # www.domain.tld/path?query
     re.IGNORECASE
 )
 
@@ -232,9 +248,7 @@ def is_greeting(text):
     Check if text is a common greeting.
     
     Strips whitespace and performs case-insensitive exact matching
-    against a predefined set of greetings including: hi, hello, hey,
-    hola, howdy, greetings, good morning, good afternoon, good evening,
-    sup, yo, hii, heya, hiya.
+    against a predefined set of greetings.
     
     Args:
         text: Input text to check
@@ -242,13 +256,8 @@ def is_greeting(text):
     Returns:
         True if text matches a known greeting, False otherwise
     """
-    greetings = {
-        'hi', 'hello', 'hey', 'hola', 'howdy', 'greetings',
-        'good morning', 'good afternoon', 'good evening',
-        'sup', 'yo', 'hii', 'heya', 'hiya'
-    }
     text_lower = text.lower().strip()
-    return text_lower in greetings
+    return text_lower in GREETINGS
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -334,13 +343,7 @@ def _extract_formats_impl(url, start_time):
         'extract_flat': False,
         'socket_timeout': 30,
         'http_chunk_size': 10485760,  # 10MB chunks
-        # Instagram specific options
-        'http_headers': {
-            'User-Agent': USER_AGENT,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
-        }
+        'http_headers': YTDLP_HTTP_HEADERS,
     }
     
     try:
@@ -409,9 +412,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     
     # Check if message is a greeting (takes precedence over URL validation)
-    # Note: is_greeting() performs exact matching after stripping whitespace,
-    # so only standalone greetings like "hi" or "hello" will match, not URLs
-    # that happen to contain these words.
+    # Note: is_greeting() performs exact matching, so only standalone greetings
+    # like "hi" or "hello" will match. This prevents treating simple greetings
+    # as invalid URLs while still allowing URL processing for normal messages.
     if is_greeting(text):
         await update.message.reply_text(
             "👋 Hello! Send me a video URL from YouTube, Instagram, TikTok, Twitter/X, or other supported sites to download."
@@ -650,12 +653,7 @@ def _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, 
         'http_chunk_size': 10485760,  # 10MB chunks to prevent 413 errors
         'fragment_retries': 5,
         'skip_unavailable_fragments': True,
-        'http_headers': {
-            'User-Agent': USER_AGENT,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
-        },
+        'http_headers': YTDLP_HTTP_HEADERS,
     }
     
     try:
