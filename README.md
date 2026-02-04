@@ -1,86 +1,279 @@
-# vdownloader — Telegram Social Video Downloader
+# vdownloader — Telegram Video Downloader Bot
 
-A Telegram bot that downloads videos from Instagram, X (Twitter), TikTok, YouTube and many other sites using yt-dlp. Includes:
+A powerful Telegram bot that downloads videos from YouTube, Instagram, TikTok, Twitter/X, and 1000+ other sites using yt-dlp.
 
-- Format selection (quality/format) using inline buttons
-- Progress updates while downloading
-- Cancellable downloads (/cancel or Cancel button)
-- Admin commands to manage bot users and settings
-- Simple JSON persistence for admins, bans and settings
-- Docker + docker-compose + systemd guidance for VPS
+## Features
 
-Security & legal
-- Use responsibly and respect copyright and each site's Terms of Service.
-- This bot downloads only public content; handling private/protected content requires cookies/credentials and may violate terms.
+- 🎬 **Multi-platform support**: YouTube, Instagram, TikTok, Twitter/X, and many more
+- 🎯 **Format selection**: Choose video quality/format via inline buttons
+- 📊 **Progress updates**: Real-time download progress with speed and ETA
+- ❌ **Cancellable downloads**: Stop downloads anytime with /cancel
+- 👥 **User management**: Ban/unban users, admin system
+- 📈 **Statistics**: Track downloads, data usage, and user count
+- 📢 **Broadcast**: Send messages to all users (admin only)
+- 💾 **Persistent state**: JSON-based storage for settings and stats
+- 🐳 **Docker ready**: Easy deployment with Docker and docker-compose
+- 🔧 **Flexible deployment**: Systemd service, Heroku, or standalone
 
-Quick setup (local / VPS)
-1. Create a private GitHub repo named `vdownloader` (optional) and push the files from this repository.
-2. Install system packages (Debian/Ubuntu example):
-   ```
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- FFmpeg (for video processing)
+- Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
+
+### Installation (Local/VPS)
+
+1. **Install system dependencies** (Debian/Ubuntu):
+   ```bash
    sudo apt update && sudo apt install -y python3 python3-venv python3-pip ffmpeg git
    ```
-3. Clone on your server (or copy files), create venv:
-   ```
+
+2. **Clone repository**:
+   ```bash
    git clone <your-repo-url> vdownloader
    cd vdownloader
+   ```
+
+3. **Create virtual environment**:
+   ```bash
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    ```
-4. Configure environment variables:
-   - BOT_TOKEN (required): Bot token from BotFather
-   - ADMIN_IDS (optional, recommended): comma-separated numeric Telegram user ids (e.g. `12345678,87654321`)
-     - Alternatively, edit `data/state.json` and add numeric ids under \"admins\" before first run.
-   - MAX_UPLOAD_MB (optional): maximum upload size in MB (default 1900)
-   Example:
-   ```
-   export BOT_TOKEN="123456:ABC-def..."
-   export ADMIN_IDS="12345678"
+
+4. **Configure environment**:
+   ```bash
+   export BOT_TOKEN="your_bot_token_here"
+   export ADMIN_IDS="your_telegram_user_id"
    export MAX_UPLOAD_MB=1900
    ```
-5. Start the bot:
-   ```
+
+5. **Run the bot**:
+   ```bash
    python main.py
    ```
 
-Using Docker
-1. Build:
-   ```
-   docker build -t vdownloader .
-   ```
-2. Run:
-   ```
-   docker run -e BOT_TOKEN="..." -e ADMIN_IDS="12345678" -e MAX_UPLOAD_MB=1900 -d --name vdownloader vdownloader
+### Using Docker
+
+#### Build and run with Docker:
+```bash
+docker build -t vdownloader .
+docker run -d \
+  -e BOT_TOKEN="your_bot_token" \
+  -e ADMIN_IDS="your_user_id" \
+  -e MAX_UPLOAD_MB=1900 \
+  --name vdownloader \
+  vdownloader
+```
+
+#### Using docker-compose:
+```bash
+# Edit docker-compose.yml with your credentials
+docker-compose up -d
+```
+
+### Using systemd (VPS)
+
+1. **Copy service file**:
+   ```bash
+   sudo cp deploy/vps-systemd.service /etc/systemd/system/vdownloader.service
    ```
 
-Using systemd (VPS)
-- See `deploy/vps-systemd.service` for an example unit. Edit the ExecStart path and Environment to include your BOT_TOKEN and ADMIN_IDS.
+2. **Edit service file**:
+   ```bash
+   sudo nano /etc/systemd/system/vdownloader.service
+   # Update BOT_TOKEN, ADMIN_IDS, and paths
+   ```
 
-Admin workflow
-- Admins are identified by numeric Telegram user id. Use ADMIN_IDS env var or `data/state.json`.
-- Admin commands (admin-only):
-  - /admin_add <user_id>
-  - /admin_remove <user_id>
-  - /admin_list
-  - /ban <user_id>
-  - /unban <user_id>
-  - /bans
-  - /active_downloads
-  - /stop_download <chat_id>
-  - /set_max_upload <MB>
-  - /stats
-  - /broadcast <message> (requires confirmation via inline button)
-  - /shutdown (requires confirmation)
+3. **Enable and start**:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable vdownloader
+   sudo systemctl start vdownloader
+   sudo systemctl status vdownloader
+   ```
 
-Persistence
-- State persisted in `data/state.json`:
-  - admins: list of numeric ids
-  - bans: list of banned numeric ids
-  - settings: contains runtime settings like `max_upload_mb`
-  - users: minimal user history for stats/broadcast
-  - stats: counters for total downloads/bytes
+## Configuration
 
-If you want:
-- I can create a ZIP of the repository for download now.
-- I can push these files to a GitHub private repo if you create the empty repo and give me the remote URL (or add me to the repo).
-- I can add a small systemd install script or help configure automatic updates.
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `BOT_TOKEN` | Yes | - | Telegram bot token from BotFather |
+| `ADMIN_IDS` | No | 360013457 | Comma-separated admin user IDs |
+| `MAX_UPLOAD_MB` | No | 1900 | Maximum file upload size in MB |
+
+### Finding Your Telegram User ID
+
+1. Start a chat with [@userinfobot](https://t.me/userinfobot)
+2. Send any message
+3. Copy your numeric user ID
+
+## Usage
+
+### User Commands
+
+- `/start` - Show welcome message and available commands
+- `/help` - Display help information
+- `/cancel` - Cancel current download
+
+### Downloading Videos
+
+1. Send a video URL to the bot
+2. Wait for format analysis
+3. Choose desired quality/format from buttons
+4. Wait for download and upload
+
+### Admin Commands
+
+Only users in `ADMIN_IDS` can use these:
+
+| Command | Description |
+|---------|-------------|
+| `/admin_add <user_id>` | Add a new admin |
+| `/admin_remove <user_id>` | Remove an admin |
+| `/admin_list` | List all admins |
+| `/ban <user_id>` | Ban a user from using the bot |
+| `/unban <user_id>` | Unban a user |
+| `/bans` | List all banned users |
+| `/active_downloads` | Show active downloads |
+| `/stop_download <chat_id>` | Stop a specific download |
+| `/set_max_upload <MB>` | Set maximum upload size |
+| `/stats` | Show bot statistics |
+| `/broadcast <message>` | Broadcast message to all users |
+| `/shutdown` | Shutdown the bot (with confirmation) |
+
+## Architecture
+
+### Directory Structure
+
+```
+vdownloader/
+├── main.py                     # Main bot implementation
+├── requirements.txt            # Python dependencies
+├── Dockerfile                  # Docker image definition
+├── docker-compose.yml          # Docker compose configuration
+├── Procfile                    # Heroku/cloud platform config
+├── LICENSE                     # MIT License
+├── README.md                   # This file
+├── .gitignore                  # Git ignore rules
+├── data/
+│   ├── state.json             # Persistent state storage
+│   └── admin_actions.log      # Admin action logs
+├── deploy/
+│   └── vps-systemd.service    # Systemd service file
+└── scripts/
+    └── init_repo.sh           # Repository initialization script
+```
+
+### State Management
+
+The bot persists state in `data/state.json`:
+
+```json
+{
+  "admins": [360013457],
+  "bans": [],
+  "settings": {
+    "max_upload_mb": 1900
+  },
+  "users": {},
+  "stats": {
+    "downloads": 0,
+    "bytes": 0
+  }
+}
+```
+
+### Download Flow
+
+1. **URL Reception**: User sends video URL
+2. **Format Extraction**: Bot analyzes available formats using yt-dlp
+3. **Format Selection**: User chooses quality via inline keyboard
+4. **Download**: Video downloaded with progress updates (~1s intervals)
+5. **Upload**: Video uploaded to Telegram
+6. **Cleanup**: Temporary files removed
+
+### Cancellation System
+
+- Each download has a `threading.Event` for cancellation
+- Progress hook checks event every update
+- User can cancel via `/cancel` command
+- Admins can stop any download via `/stop_download`
+
+## Deployment
+
+### Heroku
+
+```bash
+heroku create your-bot-name
+heroku config:set BOT_TOKEN="your_token"
+heroku config:set ADMIN_IDS="your_user_id"
+git push heroku main
+```
+
+### Railway
+
+1. Create new project from GitHub repo
+2. Add environment variables in settings
+3. Deploy
+
+### DigitalOcean/Linode/AWS
+
+Use the systemd service file in `deploy/vps-systemd.service`.
+
+## Troubleshooting
+
+### Bot doesn't respond
+- Check BOT_TOKEN is correct
+- Verify bot is running: `systemctl status vdownloader` (systemd)
+- Check logs: `journalctl -u vdownloader -f` (systemd)
+
+### Download fails
+- Verify FFmpeg is installed
+- Check file size doesn't exceed MAX_UPLOAD_MB
+- Some sites may require cookies/authentication
+
+### Permission denied
+- Ensure bot has write access to `data/` directory
+- Check file permissions: `chmod -R 755 data/`
+
+## Security & Legal
+
+⚠️ **Important Notes:**
+
+- **Copyright**: Respect copyright laws and terms of service
+- **Public content only**: This bot downloads public content only
+- **Rate limits**: Telegram has upload limits (~50MB/file for bots, ~2GB for premium)
+- **Responsibility**: Use responsibly and ethically
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+## Support
+
+- 🐛 **Issues**: Report bugs via GitHub Issues
+- 💡 **Feature requests**: Open a discussion or issue
+- 📖 **Documentation**: Check this README and code comments
+
+## Acknowledgments
+
+- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) - Telegram Bot API wrapper
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Video download engine
+- [FFmpeg](https://ffmpeg.org/) - Video processing
+
+---
+
+Made with ❤️ by Rahul Chauhan

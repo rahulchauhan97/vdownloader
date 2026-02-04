@@ -1,0 +1,17 @@
+[Unit]
+Description=VDownloader Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=vdownloader
+WorkingDirectory=/home/vdownloader/vdownloader
+Environment="BOT_TOKEN=YOUR_BOT_TOKEN_HERE"
+Environment="ADMIN_IDS=360013457"
+Environment="MAX_UPLOAD_MB=1900"
+ExecStart=/home/vdownloader/vdownloader/venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
