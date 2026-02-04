@@ -99,6 +99,13 @@ MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', 1900))
 # User-Agent for better compatibility with video platforms
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
+# Compiled regex pattern for URL detection (compiled once at module load)
+URL_PATTERN = re.compile(
+    r'(?:https?://[\w\-\.]+\.\w+|'  # http://domain.tld or https://domain.tld
+    r'(?:^|\s)www\.[\w\-]+\.\w+)',  # www.domain.tld at start or after whitespace
+    re.IGNORECASE
+)
+
 # Global state
 state_lock = asyncio.Lock()
 active_downloads = {}  # chat_id -> download_info
@@ -209,7 +216,7 @@ def is_url(text):
     Check if text contains a URL.
     
     Supports http://, https://, www. prefixes and domain patterns.
-    Performs case-insensitive matching.
+    Performs case-insensitive matching using a pre-compiled pattern.
     
     Args:
         text: Input text to check
@@ -217,13 +224,7 @@ def is_url(text):
     Returns:
         True if text appears to contain a URL, False otherwise
     """
-    # Pattern to match common URL formats
-    url_pattern = re.compile(
-        r'(?:https?://[\w\-\.]+\.\w+|'  # http://domain.tld or https://domain.tld
-        r'(?:^|\s)www\.[\w\-]+\.\w+)',  # www.domain.tld at start or after whitespace
-        re.IGNORECASE
-    )
-    return bool(url_pattern.search(text))
+    return bool(URL_PATTERN.search(text))
 
 
 def is_greeting(text):
@@ -407,7 +408,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = update.message.text.strip()
     
-    # Check if message is a greeting
+    # Check if message is a greeting (takes precedence over URL validation)
+    # Note: is_greeting() performs exact matching after stripping whitespace,
+    # so only standalone greetings like "hi" or "hello" will match, not URLs
+    # that happen to contain these words.
     if is_greeting(text):
         await update.message.reply_text(
             "👋 Hello! Send me a video URL from YouTube, Instagram, TikTok, Twitter/X, or other supported sites to download."
