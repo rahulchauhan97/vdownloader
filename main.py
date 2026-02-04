@@ -154,6 +154,8 @@ def extract_formats(url):
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
+        'socket_timeout': 30,
+        'http_chunk_size': 10485760,  # 10MB chunks
     }
     
     try:
@@ -355,6 +357,13 @@ def download_video(url, format_id, cancel_event, chat_id, bot, message_id, max_u
         'merge_output_format': 'mp4',
         'quiet': True,
         'no_warnings': True,
+        'socket_timeout': 30,
+        'http_chunk_size': 10485760,  # 10MB chunks to prevent 413 errors
+        'fragment_retries': 5,
+        'skip_unavailable_fragments': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
     }
     
     try:
