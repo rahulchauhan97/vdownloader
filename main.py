@@ -45,6 +45,11 @@ logger = logging.getLogger(__name__)
 DD_SERVICE = os.getenv('DD_SERVICE', 'vdownloader')
 DD_ENV = os.getenv('DD_ENV', 'production')
 DD_VERSION = os.getenv('DD_VERSION', '1.0.0')
+# DD_AGENT_HOST can be:
+# - 'localhost' for local agent or when running directly on host
+# - 'datadog-agent' for bundled agent container (docker-compose)
+# - IP address or hostname of existing Datadog agent
+# - 'host.docker.internal' for Docker Desktop on Mac/Windows to reach host
 DD_AGENT_HOST = os.getenv('DD_AGENT_HOST', 'localhost')
 DD_AGENT_PORT = int(os.getenv('DD_AGENT_PORT', '8125'))
 

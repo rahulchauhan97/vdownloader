@@ -13,31 +13,66 @@ VDownloader includes optional integration with Datadog for:
 ## Prerequisites
 
 1. A Datadog account (free trial available at https://www.datadoghq.com/)
-2. Docker and docker-compose installed
-3. Your Datadog API key from https://app.datadoghq.com/organization-settings/api-keys
+2. Docker and docker-compose installed (for container deployment)
+3. Your Datadog API key from https://app.datadoghq.com/organization-settings/api-keys (if using bundled agent)
 
-## Quick Start with Docker Compose
+## Deployment Scenarios
 
-### 1. Set Environment Variables
+Choose the scenario that matches your infrastructure:
 
-Create a `.env` file in the project root:
+### Scenario 1: Using Existing Datadog Agent on Server
 
+**Use this if:** You already have Datadog agent installed and running on your server.
+
+**Advantages:**
+- No need to run additional container
+- Reuse existing agent configuration
+- Centralized agent management
+- Lower resource usage
+
+**Setup:**
+
+1. Create `.env` file:
 ```bash
-# Copy the example file
-cp .env.example .env
-
-# Edit with your values
-nano .env
-```
-
-Add your Datadog API key:
-
-```bash
-# Telegram Bot Configuration
+# Bot configuration
 BOT_TOKEN=your_bot_token_from_botfather
 ADMIN_IDS=your_telegram_user_id
 
-# Datadog Configuration
+# Point to your existing Datadog agent
+DD_AGENT_HOST=localhost  # or IP/hostname of your Datadog agent
+DD_AGENT_PORT=8125
+DD_TRACE_AGENT_URL=http://localhost:8126
+DD_SERVICE=vdownloader
+DD_ENV=production
+DD_VERSION=1.0.0
+```
+
+2. Start the bot:
+```bash
+docker-compose up -d
+```
+
+The bot will connect to your existing Datadog agent at the specified host.
+
+### Scenario 2: Using Bundled Datadog Agent Container
+
+**Use this if:** You don't have Datadog agent on your server or want isolated monitoring.
+
+**Advantages:**
+- Self-contained setup
+- No system-level agent required
+- Easy to manage and remove
+- Good for testing/development
+
+**Setup:**
+
+1. Create `.env` file with your Datadog API key:
+```bash
+# Bot configuration
+BOT_TOKEN=your_bot_token_from_botfather
+ADMIN_IDS=your_telegram_user_id
+
+# Datadog API key (required for bundled agent)
 DD_API_KEY=your_datadog_api_key_here
 DD_SITE=datadoghq.com  # or datadoghq.eu for EU region
 DD_SERVICE=vdownloader
@@ -45,16 +80,34 @@ DD_ENV=production
 DD_VERSION=1.0.0
 ```
 
-### 2. Start the Services
-
+2. Start both bot and Datadog agent:
 ```bash
-# Start both bot and Datadog agent
-docker-compose up -d
-
-# Check logs
-docker-compose logs -f vdownloader
-docker-compose logs -f datadog-agent
+docker-compose -f docker-compose.yml -f docker-compose.datadog.yml up -d
 ```
+
+This starts both the bot and a containerized Datadog agent.
+
+### Scenario 3: No Datadog (Standard Logging)
+
+**Use this if:** You don't need Datadog monitoring or want to use a different monitoring solution.
+
+**Setup:**
+
+1. Create `.env` file with only bot configuration:
+```bash
+BOT_TOKEN=your_bot_token_from_botfather
+ADMIN_IDS=your_telegram_user_id
+MAX_UPLOAD_MB=1900
+```
+
+2. Start the bot:
+```bash
+docker-compose up -d
+```
+
+The bot will run with standard logging to stdout.
+
+## Verification
 
 ### 3. Verify in Datadog
 
@@ -62,6 +115,51 @@ docker-compose logs -f datadog-agent
 2. Look for traces from the `vdownloader` service
 3. Go to https://app.datadoghq.com/metric/explorer
 4. Search for metrics starting with `vdownloader.*`
+
+## Using with Kubernetes or Other Orchestrators
+
+If you're deploying with Kubernetes or another orchestrator:
+
+1. **Ensure Datadog agent is deployed** as a DaemonSet or similar
+2. **Set environment variables** in your pod/container spec:
+   ```yaml
+   env:
+     - name: DD_AGENT_HOST
+       valueFrom:
+         fieldRef:
+           fieldPath: status.hostIP
+     - name: DD_SERVICE
+       value: "vdownloader"
+     - name: DD_ENV
+       value: "production"
+   ```
+3. **Enable APM** in your Datadog agent configuration
+4. **Deploy the bot** with the configured environment variables
+
+The bot will automatically discover and connect to the Datadog agent.
+
+## Configuration Reference
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DD_SERVICE` | No | vdownloader | Service name in Datadog |
+| `DD_ENV` | No | production | Environment (dev/staging/production) |
+| `DD_VERSION` | No | 1.0.0 | Application version |
+| `DD_AGENT_HOST` | No | localhost | Datadog agent hostname/IP |
+| `DD_AGENT_PORT` | No | 8125 | DogStatsD port |
+| `DD_TRACE_AGENT_URL` | No | http://localhost:8126 | APM trace agent URL |
+| `DD_API_KEY` | Only for bundled agent | - | Datadog API key |
+| `DD_SITE` | Only for bundled agent | datadoghq.com | Datadog site |
+
+### Network Requirements
+
+The bot needs network access to:
+- **Port 8125/UDP** (DogStatsD) - for metrics
+- **Port 8126/TCP** (APM) - for traces
+
+If using firewall rules, ensure these ports are accessible between the bot and Datadog agent.
 
 ## Running Without Docker
 

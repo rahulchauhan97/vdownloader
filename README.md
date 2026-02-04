@@ -70,26 +70,39 @@ docker run -d \
 
 #### Using docker-compose:
 
-**Basic setup (without Datadog):**
+**Scenario 1: Basic setup (without Datadog):**
 ```bash
 # Set required environment variables
 export BOT_TOKEN="your_bot_token"
 export ADMIN_IDS="your_user_id"
 
-# Start the bot
-docker-compose up -d vdownloader
+# Start the bot only
+docker-compose up -d
 ```
 
-**With Datadog monitoring:**
+**Scenario 2: With existing Datadog agent on server:**
 ```bash
-# Set required environment variables
+# If you already have Datadog agent running on your server
+export BOT_TOKEN="your_bot_token"
+export ADMIN_IDS="your_user_id"
+export DD_AGENT_HOST="localhost"  # or IP of your Datadog agent
+export DD_SERVICE="vdownloader"
+export DD_ENV="production"
+
+# Start the bot (connects to existing agent)
+docker-compose up -d
+```
+
+**Scenario 3: With bundled Datadog agent container:**
+```bash
+# If you want to run Datadog agent alongside the bot
 export BOT_TOKEN="your_bot_token"
 export ADMIN_IDS="your_user_id"
 export DD_API_KEY="your_datadog_api_key"
 export DD_SITE="datadoghq.com"  # or datadoghq.eu for EU
 
 # Start both bot and Datadog agent
-docker-compose up -d
+docker-compose -f docker-compose.yml -f docker-compose.datadog.yml up -d
 ```
 
 To view logs:
@@ -97,7 +110,7 @@ To view logs:
 # Bot logs
 docker-compose logs -f vdownloader
 
-# Datadog agent logs
+# Datadog agent logs (if using bundled agent)
 docker-compose logs -f datadog-agent
 ```
 
