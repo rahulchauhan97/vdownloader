@@ -205,18 +205,43 @@ def is_banned(user_id, state):
 
 
 def is_url(text):
-    """Check if text is a URL"""
-    # Pattern to match URLs with various protocols
+    """
+    Check if text contains a URL.
+    
+    Supports http://, https://, www. prefixes and domain patterns.
+    Performs case-insensitive matching.
+    
+    Args:
+        text: Input text to check
+        
+    Returns:
+        True if text appears to contain a URL, False otherwise
+    """
+    # Pattern to match common URL formats
     url_pattern = re.compile(
-        r'https?://|'  # http:// or https://
-        r'www\.|'      # www.
-        r'\w+\.\w+/'   # domain.com/
+        r'(?:https?://|'  # http:// or https://
+        r'(?:^|\s)www\.)'  # www. at start or after whitespace
+        r'[\w\-\.]+\.\w+',  # domain.tld
+        re.IGNORECASE
     )
-    return bool(url_pattern.search(text.lower()))
+    return bool(url_pattern.search(text))
 
 
 def is_greeting(text):
-    """Check if text is a greeting"""
+    """
+    Check if text is a common greeting.
+    
+    Strips whitespace and performs case-insensitive exact matching
+    against a predefined set of greetings including: hi, hello, hey,
+    hola, howdy, greetings, good morning, good afternoon, good evening,
+    sup, yo, hii, heya, hiya.
+    
+    Args:
+        text: Input text to check
+        
+    Returns:
+        True if text matches a known greeting, False otherwise
+    """
     greetings = {
         'hi', 'hello', 'hey', 'hola', 'howdy', 'greetings',
         'good morning', 'good afternoon', 'good evening',
