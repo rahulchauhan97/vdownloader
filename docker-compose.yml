@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # VDownloader Bot
   vdownloader:
     build: .
     container_name: vdownloader
@@ -8,6 +9,18 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS:-360013457}
       - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-1900}
+      # Datadog configuration
+      - DD_SERVICE=vdownloader
+      - DD_ENV=${DD_ENV:-production}
+      - DD_VERSION=${DD_VERSION:-1.0.0}
+      - DD_AGENT_HOST=${DD_AGENT_HOST:-datadog-agent}
+      - DD_AGENT_PORT=${DD_AGENT_PORT:-8125}
+      - DD_TRACE_AGENT_URL=${DD_TRACE_AGENT_URL:-http://datadog-agent:8126}
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    labels:
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "vdownloader"}]'
+    # Note: If using external Datadog agent, remove the depends_on section
+    # depends_on:
+    #   - datadog-agent

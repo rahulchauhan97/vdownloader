@@ -69,9 +69,49 @@ docker run -d \
 ```
 
 #### Using docker-compose:
+
+**Scenario 1: Basic setup (without Datadog):**
 ```bash
-# Edit docker-compose.yml with your credentials
+# Set required environment variables
+export BOT_TOKEN="your_bot_token"
+export ADMIN_IDS="your_user_id"
+
+# Start the bot only
 docker-compose up -d
+```
+
+**Scenario 2: With existing Datadog agent on server:**
+```bash
+# If you already have Datadog agent running on your server
+export BOT_TOKEN="your_bot_token"
+export ADMIN_IDS="your_user_id"
+export DD_AGENT_HOST="localhost"  # or IP of your Datadog agent
+export DD_SERVICE="vdownloader"
+export DD_ENV="production"
+
+# Start the bot (connects to existing agent)
+docker-compose up -d
+```
+
+**Scenario 3: With bundled Datadog agent container:**
+```bash
+# If you want to run Datadog agent alongside the bot
+export BOT_TOKEN="your_bot_token"
+export ADMIN_IDS="your_user_id"
+export DD_API_KEY="your_datadog_api_key"
+export DD_SITE="datadoghq.com"  # or datadoghq.eu for EU
+
+# Start both bot and Datadog agent
+docker-compose -f docker-compose.yml -f docker-compose.datadog.yml up -d
+```
+
+To view logs:
+```bash
+# Bot logs
+docker-compose logs -f vdownloader
+
+# Datadog agent logs (if using bundled agent)
+docker-compose logs -f datadog-agent
 ```
 
 ### Using systemd (VPS)
@@ -99,11 +139,51 @@ docker-compose up -d
 
 ### Environment Variables
 
+#### Required Variables
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `BOT_TOKEN` | Yes | - | Telegram bot token from BotFather |
+
+#### Optional Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
 | `ADMIN_IDS` | No | 360013457 | Comma-separated admin user IDs |
 | `MAX_UPLOAD_MB` | No | 1900 | Maximum file upload size in MB |
+
+#### Datadog Configuration (Optional)
+
+The bot includes optional Datadog APM and logging integration for monitoring and observability.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DD_API_KEY` | For Datadog | - | Datadog API key (required if using Datadog) |
+| `DD_SITE` | No | datadoghq.com | Datadog site (e.g., datadoghq.eu for EU) |
+| `DD_SERVICE` | No | vdownloader | Service name in Datadog |
+| `DD_ENV` | No | production | Environment name (e.g., dev, staging, production) |
+| `DD_VERSION` | No | 1.0.0 | Application version for tracking |
+| `DD_AGENT_HOST` | No | localhost | Datadog agent hostname |
+| `DD_AGENT_PORT` | No | 8125 | Datadog StatsD port |
+
+**Note:** If Datadog packages are not installed or `DD_API_KEY` is not set, the bot will run with standard logging without affecting functionality.
+
+### Datadog Monitoring Features
+
+When Datadog is enabled, the bot automatically tracks:
+
+- **APM Traces**: Request tracing for format extraction and downloads
+- **Custom Metrics**:
+  - `vdownloader.command.start` - Start command invocations
+  - `vdownloader.user.new` - New user registrations
+  - `vdownloader.url.received` - URL processing requests
+  - `vdownloader.extract_formats.duration` - Format extraction timing
+  - `vdownloader.download.duration` - Download timing and size
+  - `vdownloader.upload.duration` - Upload timing
+  - `vdownloader.stats.total_downloads` - Total downloads counter
+  - `vdownloader.stats.total_bytes` - Total bytes transferred
+- **Structured Logs**: JSON-formatted logs with context (user_id, errors, timing)
+- **Error Tracking**: Automatic error categorization and alerting
 
 ### Finding Your Telegram User ID
 
