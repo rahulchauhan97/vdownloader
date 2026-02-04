@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  vdownloader:
+    build: .
+    container_name: vdownloader
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS:-360013457}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-1900}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
