@@ -12,6 +12,7 @@ import tempfile
 import shutil
 import time
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -97,6 +98,29 @@ MAX_UPLOAD_MB = int(os.getenv('MAX_UPLOAD_MB', 1900))
 
 # User-Agent for better compatibility with video platforms
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+
+# HTTP headers for yt-dlp (used for better compatibility with various platforms)
+YTDLP_HTTP_HEADERS = {
+    'User-Agent': USER_AGENT,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-us,en;q=0.5',
+    'Sec-Fetch-Mode': 'navigate',
+}
+
+# Common greetings for detection
+GREETINGS = {
+    'hi', 'hello', 'hey', 'hola', 'howdy', 'greetings',
+    'good morning', 'good afternoon', 'good evening',
+    'sup', 'yo', 'hii', 'heya', 'hiya'
+}
+
+# Compiled regex pattern for URL detection (compiled once at module load)
+# Matches URLs with http://, https://, or www. prefix, including paths and query parameters
+URL_PATTERN = re.compile(
+    r'(?:https?://[\w.\-]+\.\w+(?:/[^\s]*)?|'  # http(s)://domain.tld followed by optional non-whitespace
+    r'(?:^|\s)www\.[\w\-]+\.\w+(?:/[^\s]*)?)',  # www.domain.tld followed by optional non-whitespace
+    re.IGNORECASE
+)
 
 # Global state
 state_lock = asyncio.Lock()
@@ -203,6 +227,39 @@ def is_banned(user_id, state):
     return user_id in state['bans']
 
 
+def is_url(text):
+    """
+    Check if text contains a URL.
+    
+    Supports http://, https://, www. prefixes and domain patterns.
+    Performs case-insensitive matching using a pre-compiled pattern.
+    
+    Args:
+        text: Input text to check
+        
+    Returns:
+        True if text appears to contain a URL, False otherwise
+    """
+    return bool(URL_PATTERN.search(text))
+
+
+def is_greeting(text):
+    """
+    Check if text is a common greeting.
+    
+    Strips whitespace and performs case-insensitive exact matching
+    against a predefined set of greetings.
+    
+    Args:
+        text: Input text to check
+        
+    Returns:
+        True if text matches a known greeting, False otherwise
+    """
+    text_lower = text.lower().strip()
+    return text_lower in GREETINGS
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
     user_id = update.effective_user.id
@@ -286,6 +343,7 @@ def _extract_formats_impl(url, start_time):
         'extract_flat': False,
         'socket_timeout': 30,
         'http_chunk_size': 10485760,  # 10MB chunks
+        'http_headers': YTDLP_HTTP_HEADERS,
     }
     
     try:
@@ -343,9 +401,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     state = await load_state()
     
-    # Send metric
-    send_metric('vdownloader.url.received', tags=['event:url_received'])
-    
     if is_banned(user_id, state):
         logger.warning("Banned user tried to download", extra={
             'user_id': user_id,
@@ -354,7 +409,29 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You are banned from using this bot.")
         return
     
-    url = update.message.text.strip()
+    text = update.message.text.strip()
+    
+    # Check if message is a greeting (takes precedence over URL validation)
+    # Note: is_greeting() performs exact matching, so only standalone greetings
+    # like "hi" or "hello" will match. This prevents treating simple greetings
+    # as invalid URLs while still allowing URL processing for normal messages.
+    if is_greeting(text):
+        await update.message.reply_text(
+            "👋 Hello! Send me a video URL from YouTube, Instagram, TikTok, Twitter/X, or other supported sites to download."
+        )
+        return
+    
+    # Check if message is a URL
+    if not is_url(text):
+        await update.message.reply_text(
+            "Please send a valid video URL. Use /help for more information."
+        )
+        return
+    
+    url = text
+    
+    # Send metric
+    send_metric('vdownloader.url.received', tags=['event:url_received'])
     
     logger.info("URL received for processing", extra={
         'user_id': user_id,
@@ -576,9 +653,7 @@ def _download_video_impl(url, format_id, cancel_event, temp_dir, max_upload_mb, 
         'http_chunk_size': 10485760,  # 10MB chunks to prevent 413 errors
         'fragment_retries': 5,
         'skip_unavailable_fragments': True,
-        'http_headers': {
-            'User-Agent': USER_AGENT,
-        },
+        'http_headers': YTDLP_HTTP_HEADERS,
     }
     
     try:
